@@ -37,12 +37,44 @@ jobs:
       - name: Ajouter la plateforme Android (génère le dossier android/)
         run: npx cap add android
 
+      - name: Forcer les permissions de géolocalisation dans AndroidManifest.xml
+        run: |
+          python3 - <<'PY'
+          import re
+
+          path = "android/app/src/main/AndroidManifest.xml"
+          with open(path, "r", encoding="utf-8") as f:
+              content = f.read()
+
+          perms = (
+              '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n'
+              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n'
+          )
+
+          if "ACCESS_FINE_LOCATION" in content and "ACCESS_COARSE_LOCATION" in content:
+              print("Permissions déjà présentes dans le manifeste, aucune modification nécessaire.")
+          else:
+              # Insère les balises <uses-permission> juste après la balise <manifest ...>
+              new_content, count = re.subn(
+                  r'(<manifest[^>]*>)',
+                  r'\1\n' + perms.rstrip('\n'),
+                  content,
+                  count=1
+              )
+              if count == 0:
+                  raise SystemExit("Impossible de trouver la balise <manifest> dans AndroidManifest.xml")
+              with open(path, "w", encoding="utf-8") as f:
+                  f.write(new_content)
+              print("✔ Permissions ACCESS_FINE_LOCATION / ACCESS_COARSE_LOCATION ajoutées au manifeste.")
+
+          # Vérification finale : affiche l'extrait du manifeste pour contrôle dans les logs
+          with open(path, "r", encoding="utf-8") as f:
+              print(f.read()[:800])
+          PY
+
       - name: Générer les icônes Android depuis assets/icon.png
         run: npx @capacitor/assets generate --android
         continue-on-error: true
-        # continue-on-error : si assets/icon.png est absent (premier build
-        # avant ajout du logo), l'icône par défaut de Capacitor est conservée
-        # au lieu de faire échouer tout le pipeline.
 
       - name: Synchroniser les assets web vers le projet natif
         run: npx cap sync android
@@ -61,3 +93,4 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
+          
