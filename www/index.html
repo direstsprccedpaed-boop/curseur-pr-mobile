@@ -1480,11 +1480,54 @@ document.getElementById('btnExportAccrochage').addEventListener('click', () => {
 });
 
 /* =========================================================================
-   19. GÉOLOCALISATION GPS
+   19. GÉOLOCALISATION GPS — plugin natif Capacitor (avec repli Web API)
+   À COLLER À LA PLACE DU BLOC "19. GÉOLOCALISATION GPS" EXISTANT
+   dans www/index.html (entre les balises <script> ... </script>)
    ========================================================================= */
-document.getElementById('fab').addEventListener('click', () => {
+
+// Récupère la position en utilisant le plugin natif @capacitor/geolocation
+// s'il est disponible (app packagée en APK), sinon l'API Web standard
+// (utile pour tester index.html directement dans un navigateur desktop).
+function getNativeGeolocationPlugin() {
+  if (window.Capacitor &&
+      typeof window.Capacitor.isNativePlatform === 'function' &&
+      window.Capacitor.isNativePlatform() &&
+      window.Capacitor.Plugins &&
+      window.Capacitor.Plugins.Geolocation) {
+    return window.Capacitor.Plugins.Geolocation;
+  }
+  return null;
+}
+
+async function requestLocationAndCenter() {
+  const Geolocation = getNativeGeolocationPlugin();
+
+  if (Geolocation) {
+    // ---- Chemin natif Android (plugin @capacitor/geolocation) ----
+    try {
+      const status = await Geolocation.checkPermissions();
+      if (status.location !== 'granted' && status.coarseLocation !== 'granted') {
+        const req = await Geolocation.requestPermissions({ permissions: ['location'] });
+        if (req.location !== 'granted' && req.coarseLocation !== 'granted') {
+          setStatus("⚠ Permission de localisation refusée. Autorisez-la dans Réglages Android → Applications → Curseur PR → Autorisations.", 'err');
+          return;
+        }
+      }
+      setStatus("Recherche du GPS…", '');
+      const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 15000 });
+      const latlng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      App.map.setView([latlng.lat, latlng.lng], 17);
+      if (App.curseurActive && App.prCalc) handleMapPointer(latlng, true);
+      setStatus("✔ Position GPS trouvée (précision ~" + Math.round(pos.coords.accuracy) + " m).", 'ok');
+    } catch (err) {
+      setStatus("⚠ Impossible d'obtenir la position GPS : " + (err.message || err), 'err');
+    }
+    return;
+  }
+
+  // ---- Repli navigateur (test hors APK) ----
   if (!navigator.geolocation) {
-    setStatus("⚠ La géolocalisation n'est pas disponible sur cet appareil.", 'err');
+    setStatus("⚠ La géolocalisation n'est pas disponible sur cet appareil/navigateur.", 'err');
     return;
   }
   setStatus("Recherche du GPS…", '');
@@ -1497,14 +1540,16 @@ document.getElementById('fab').addEventListener('click', () => {
     },
     (err) => {
       let msg = "⚠ Impossible d'obtenir la position GPS.";
-      if (err.code === 1) msg = "⚠ Permission de localisation refusée. Autorisez la géolocalisation dans les réglages.";
+      if (err.code === 1) msg = "⚠ Permission de localisation refusée par le navigateur.";
       else if (err.code === 2) msg = "⚠ Position indisponible (GPS désactivé ou signal absent).";
       else if (err.code === 3) msg = "⚠ Délai dépassé lors de la recherche GPS.";
       setStatus(msg, 'err');
     },
     { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
   );
-});
+}
+
+document.getElementById('fab').addEventListener('click', requestLocationAndCenter);
 
 /* =========================================================================
    20. UI GÉNÉRIQUE — panneau, onglets, chargement manuel de repli
