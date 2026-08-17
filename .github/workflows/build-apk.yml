@@ -37,6 +37,13 @@ jobs:
       - name: Ajouter la plateforme Android (génère le dossier android/)
         run: npx cap add android
 
+      - name: Générer les icônes Android depuis assets/icon.png
+        run: npx @capacitor/assets generate --android
+        continue-on-error: true
+        # continue-on-error : si assets/icon.png est absent (premier build
+        # avant ajout du logo), l'icône par défaut de Capacitor est conservée
+        # au lieu de faire échouer tout le pipeline.
+
       - name: Synchroniser les assets web vers le projet natif
         run: npx cap sync android
 
