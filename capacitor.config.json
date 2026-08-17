@@ -1,0 +1,9 @@
+{
+  "appId": "fr.votreorg.curseurpr",
+  "appName": "Curseur PR",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "android": {
+    "allowMixedContent": true
+  }
+}
