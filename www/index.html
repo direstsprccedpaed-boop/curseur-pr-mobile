@@ -1,0 +1,1659 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Curseur PR Mobile</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
+<style>
+  :root{
+    --bleu:#1565C0; --vert:#2e7d32; --violet:#6a1b9a; --gris:#777;
+    --danger:#c62828; --warn:#e65100; --ok:#2e7d32;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;
+    font-family:-apple-system,Roboto,Segoe UI,Arial,sans-serif;background:#eee;}
+  #map{position:absolute;top:0;left:0;right:0;bottom:0;z-index:1;}
+
+  /* ---- Barre supérieure ---- */
+  #topbar{
+    position:absolute;top:0;left:0;right:0;z-index:500;
+    display:flex;align-items:center;gap:8px;
+    padding:8px 10px;padding-top:calc(8px + env(safe-area-inset-top));
+    background:rgba(255,255,255,0.96);box-shadow:0 2px 6px rgba(0,0,0,.25);
+  }
+  #topbar .title{font-weight:700;font-size:16px;color:#222;flex:1;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .iconbtn{
+    width:46px;height:46px;min-width:46px;border-radius:8px;border:none;
+    background:#f0f0f0;font-size:20px;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;
+  }
+  .iconbtn:active{background:#dcdcdc;}
+  .iconbtn.active{background:var(--bleu);color:#fff;}
+
+  /* ---- Panneau latéral coulissant (bottom sheet plein écran mobile) ---- */
+  #panel{
+    position:absolute;top:0;right:0;bottom:0;width:min(420px,92vw);z-index:600;
+    background:#fff;box-shadow:-4px 0 14px rgba(0,0,0,.3);
+    transform:translateX(105%);transition:transform .25s ease;
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+  #panel.open{transform:translateX(0);}
+  #panelHeader{
+    display:flex;align-items:center;padding:10px;padding-top:calc(10px + env(safe-area-inset-top));
+    background:#0d47a1;color:#fff;gap:8px;
+  }
+  #panelHeader .tabs{display:flex;flex:1;gap:6px;}
+  .tabbtn{flex:1;min-height:44px;border:none;border-radius:8px;background:rgba(255,255,255,.15);
+    color:#fff;font-weight:600;font-size:13px;}
+  .tabbtn.active{background:#fff;color:#0d47a1;}
+  #panelClose{width:40px;height:40px;border:none;background:transparent;color:#fff;font-size:22px;}
+  #panelBody{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px;padding-bottom:calc(20px + env(safe-area-inset-bottom));}
+  .tabpage{display:none;}
+  .tabpage.active{display:block;}
+
+  .grp{border:1px solid #ddd;border-radius:10px;padding:10px;margin-bottom:12px;background:#fafafa;}
+  .grp h3{margin:0 0 8px 0;font-size:13px;color:#444;text-transform:uppercase;letter-spacing:.03em;}
+  label{display:block;font-size:12px;color:#555;margin:6px 0 3px;}
+  select,input[type=text],input[type=number],input[type=date]{
+    width:100%;min-height:44px;font-size:15px;padding:6px 10px;border:1px solid #ccc;border-radius:8px;
+    background:#fff;
+  }
+  .btn{
+    width:100%;min-height:48px;border:none;border-radius:10px;font-size:15px;font-weight:700;
+    color:#fff;background:var(--bleu);margin-top:8px;cursor:pointer;
+  }
+  .btn.green{background:var(--ok);}
+  .btn.orange{background:var(--warn);}
+  .btn.outline{background:#fff;border:2px solid var(--bleu);color:var(--bleu);}
+  .btn.outline.active{background:var(--bleu);color:#fff;}
+  .btn:active{filter:brightness(.9);}
+  .row{display:flex;gap:8px;}
+  .row > *{flex:1;}
+  .segbtns{display:flex;gap:6px;margin-top:6px;}
+  .segbtn{flex:1;min-height:44px;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;}
+  .segbtn.D{border:2px solid var(--bleu);color:var(--bleu);background:#fff;}
+  .segbtn.G{border:2px solid var(--vert);color:var(--vert);background:#fff;}
+  .segbtn.I{border:2px solid var(--violet);color:var(--violet);background:#fff;}
+  .segbtn.auto{border:2px solid #999;color:#666;background:#fff;}
+  .segbtn.D.on{background:var(--bleu);color:#fff;}
+  .segbtn.G.on{background:var(--vert);color:#fff;}
+  .segbtn.I.on{background:var(--violet);color:#fff;}
+  .segbtn.auto.on{background:#999;color:#fff;}
+
+  .badge{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;
+    border-radius:50%;color:#fff;font-weight:700;font-size:14px;margin-right:8px;}
+  .valuebox{background:#fff;border-radius:10px;padding:10px;text-align:center;}
+  .valuebox .pr{font-size:24px;font-weight:800;color:var(--bleu);}
+  .valuebox .sub{font-size:12px;color:#888;margin-top:4px;}
+  .coord{font-family:monospace;font-size:13px;}
+
+  .alert{padding:8px 10px;border-radius:8px;font-size:12px;margin-top:8px;display:none;}
+  .alert.warn{background:#fff3e0;color:#e65100;border:1px solid #ffb74d;}
+  .alert.err{background:#ffebee;color:#c62828;border:1px solid #ef5350;font-weight:700;}
+  .alert.show{display:block;}
+
+  #status{
+    position:absolute;left:8px;right:8px;z-index:500;
+    bottom:calc(10px + env(safe-area-inset-bottom));
+    background:rgba(0,0,0,.72);color:#fff;font-size:12.5px;border-radius:10px;
+    padding:8px 12px;max-height:70px;overflow-y:auto;line-height:1.35;
+    pointer-events:none;
+  }
+  #status.err{background:rgba(198,40,40,.9);}
+  #status.ok{background:rgba(46,125,50,.85);}
+
+  #fab{
+    position:absolute;right:10px;z-index:500;
+    bottom:calc(90px + env(safe-area-inset-bottom));
+    width:52px;height:52px;border-radius:50%;background:#fff;border:none;
+    box-shadow:0 2px 8px rgba(0,0,0,.35);font-size:22px;
+  }
+
+  #fileGate{
+    position:absolute;inset:0;z-index:900;background:#0d47a1;color:#fff;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:24px;text-align:center;gap:10px;
+  }
+  #fileGate.hidden{display:none;}
+  #fileGate h1{font-size:20px;margin:0 0 6px;}
+  #fileGate p{font-size:13px;opacity:.85;max-width:340px;margin:0;}
+  .filebtn{
+    width:min(320px,86vw);min-height:50px;border-radius:10px;border:none;
+    background:#fff;color:#0d47a1;font-weight:700;font-size:15px;
+  }
+  .fileLabel{font-size:12px;opacity:.85;margin-top:-4px;}
+  input[type=file]{display:none;}
+
+  select:disabled,.btn:disabled{opacity:.45;}
+  .smallnote{font-size:11px;color:#888;margin-top:4px;}
+
+  /* ---- Écran de chargement automatique des données embarquées ---- */
+  .spinner{
+    width:44px;height:44px;border-radius:50%;
+    border:4px solid rgba(255,255,255,.25);border-top-color:#fff;
+    animation:spin 0.9s linear infinite;margin:6px auto 4px;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+  #manualFallback{display:none;width:100%;flex-direction:column;align-items:center;gap:10px;margin-top:6px;}
+  #manualFallback.show{display:flex;}
+</style>
+</head>
+<body>
+
+<div id="fileGate">
+  <div id="autoLoadView">
+    <div class="spinner"></div>
+    <h1>Curseur PR</h1>
+    <p id="autoLoadMsg">Chargement des données embarquées (segments inter-PR et bornage)…</p>
+  </div>
+
+  <div id="manualFallback">
+    <h1 style="margin-top:0;">Chargement manuel</h1>
+    <p>Les données embarquées n'ont pas pu être chargées automatiquement. Sélectionnez les fichiers CSV manuellement.</p>
+
+    <button class="filebtn" id="btnLoadInterPr">📄 Charger « Segments inter-PR » (obligatoire)</button>
+    <div class="fileLabel" id="lblInterPr">Aucun fichier chargé</div>
+    <input type="file" id="fileInterPr" accept=".csv,text/csv">
+
+    <button class="filebtn" id="btnLoadBornage">📄 Charger « Bornage PR » (optionnel)</button>
+    <div class="fileLabel" id="lblBornage">Aucun fichier chargé</div>
+    <input type="file" id="fileBornage" accept=".csv,text/csv">
+
+    <button class="filebtn" id="btnStart" style="background:#2e7d32;color:#fff;" disabled>▶ Démarrer l'application</button>
+    <div class="fileLabel" id="gateMsg"></div>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<div id="topbar">
+  <button class="iconbtn" id="btnMenu">☰</button>
+  <div class="title" id="topTitle">Curseur PR</div>
+  <button class="iconbtn" id="btnCurseur">🎯</button>
+</div>
+
+<button id="fab" title="Me localiser">📍</button>
+
+<div id="status">Chargement des données…</div>
+
+<div id="panel">
+  <div id="panelHeader">
+    <div class="tabs">
+      <button class="tabbtn active" data-tab="pr">Curseur PR</button>
+      <button class="tabbtn" data-tab="travaux">Travaux</button>
+      <button class="tabbtn" data-tab="accrochage">Accrochage</button>
+    </div>
+    <button id="panelClose">✕</button>
+  </div>
+  <div id="panelBody">
+
+    <!-- ============== ONGLET CURSEUR PR ============== -->
+    <div class="tabpage active" id="tab-pr">
+
+      <button class="btn" id="btnToggleCurseur">▶ Activer le curseur</button>
+
+      <div class="grp">
+        <h3>Position courante</h3>
+        <div class="valuebox">
+          <div class="pr" id="valPr">PR ? + ? m</div>
+          <div class="sub" id="valRoute">Route —</div>
+          <div class="sub" id="valLongueur"></div>
+        </div>
+        <div style="margin-top:8px;display:flex;align-items:center;">
+          <span class="badge" id="badgeCote" style="background:#ccc;">—</span>
+          <span id="txtCote" style="color:#555;font-size:13px;">Côté inconnu</span>
+        </div>
+        <label>Coordonnées Lambert-93 (EPSG:2154)</label>
+        <div class="coord">X : <span id="valX">—</span></div>
+        <div class="coord">Y : <span id="valY">—</span></div>
+        <button class="btn outline" id="btnCopy">📋 Copier les valeurs</button>
+        <div class="alert warn" id="alertFourche"></div>
+        <div class="alert err" id="alertAnomalie"></div>
+      </div>
+
+      <div class="grp">
+        <h3>Forcer le côté</h3>
+        <div class="segbtns">
+          <div class="segbtn D on" data-cote="null" id="btnAuto">Auto</div>
+          <div class="segbtn D" data-cote="D">D</div>
+          <div class="segbtn G" data-cote="G">G</div>
+          <div class="segbtn I" data-cote="I">I</div>
+        </div>
+        <div class="smallnote">Si le côté forcé n'existe pas à cet endroit, retour automatique en mode Auto.</div>
+      </div>
+
+      <div class="grp">
+        <h3>Aller à une position</h3>
+        <label>Département</label>
+        <select id="selGotoDep"><option>—</option></select>
+        <label>Route</label>
+        <select id="selGotoRoute"><option>—</option></select>
+        <label>PR</label>
+        <select id="selGotoPr"><option>—</option></select>
+        <label>Abscisse (m)</label>
+        <input type="number" id="txtGotoAbs" placeholder="ex: 250">
+        <label>Côté</label>
+        <select id="selGotoCote">
+          <option value="D">D — Chaussée droite</option>
+          <option value="G">G — Chaussée gauche</option>
+          <option value="I">I — Bidirectionnel</option>
+        </select>
+        <button class="btn green" id="btnGoto">📍 Aller à cette position</button>
+      </div>
+    </div>
+
+    <!-- ============== ONGLET TRAVAUX ============== -->
+    <div class="tabpage" id="tab-travaux">
+      <div class="grp">
+        <h3>Position de début</h3>
+        <label>Département</label><select id="selDepD"><option>—</option></select>
+        <label>Route</label><select id="selRouteD"><option>—</option></select>
+        <label>PR</label><select id="selPrD"><option>—</option></select>
+        <label>Abscisse (m)</label><input type="number" id="txtAbsD" placeholder="ex: 250">
+        <label>Côté</label>
+        <select id="selCoteD"><option value="D">D</option><option value="G">G</option><option value="I">I</option></select>
+      </div>
+      <div class="grp">
+        <h3>Position de fin</h3>
+        <label>Département</label><select id="selDepF"><option>—</option></select>
+        <label>Route</label><select id="selRouteF"><option>—</option></select>
+        <label>PR</label><select id="selPrF"><option>—</option></select>
+        <label>Abscisse (m)</label><input type="number" id="txtAbsF" placeholder="ex: 800">
+        <label>Côté</label>
+        <select id="selCoteF"><option value="D">D</option><option value="G">G</option><option value="I">I</option></select>
+      </div>
+      <div class="grp">
+        <h3>Période des travaux</h3>
+        <label>Date début</label><input type="date" id="dateDebut">
+        <label>Date fin</label><input type="date" id="dateFin">
+      </div>
+      <button class="btn orange" id="btnCreateTravaux">➕ Créer l'entité travaux</button>
+
+      <div class="grp">
+        <h3>Création rapide par clic sur la carte</h3>
+        <button class="btn outline" id="btnModeClic">🖱 Activer le mode création par clic</button>
+        <div class="smallnote" id="lblModeClic" style="display:none;">En attente du point de début…</div>
+      </div>
+
+      <div class="grp">
+        <h3>Entités créées (session)</h3>
+        <div id="listeTravaux" class="smallnote">Aucune entité créée.</div>
+        <button class="btn outline" id="btnExportTravaux">⬇ Exporter GeoJSON</button>
+      </div>
+    </div>
+
+    <!-- ============== ONGLET ACCROCHAGE ============== -->
+    <div class="tabpage" id="tab-accrochage">
+      <div class="grp">
+        <h3>Couche cible ponctuelle</h3>
+        <button class="filebtn" id="btnLoadAccrochage" style="background:#1565C0;color:#fff;width:100%;">📄 Charger un CSV de points cible</button>
+        <div class="smallnote" id="lblAccrochage">Aucun fichier chargé</div>
+        <label>Champ X</label><select id="selAccX"></select>
+        <label>Champ Y</label><select id="selAccY"></select>
+        <input type="file" id="fileAccrochage" accept=".csv,text/csv">
+      </div>
+      <div class="grp">
+        <h3>Mode accrochage</h3>
+        <button class="btn outline" id="btnModeAccrochage">🧲 Activer le mode accrochage</button>
+        <div class="smallnote">Chaque tap accroche l'entité la plus proche et lui affecte route/PR/abscisse/côté/X/Y.</div>
+      </div>
+      <div class="grp">
+        <h3>Entités mises à jour</h3>
+        <div id="listeAccrochage" class="smallnote">Aucune mise à jour.</div>
+        <button class="btn outline" id="btnExportAccrochage">⬇ Exporter CSV mis à jour</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* =========================================================================
+   0. NOMS DES FICHIERS EMBARQUÉS (bundlés dans www/data/ -> APK)
+   ========================================================================= */
+const BUNDLED_INTERPR_PATH = "data/interPlo_pr.csv";
+const BUNDLED_BORNAGE_PATH = "data/bornage_pr.csv";
+
+/* =========================================================================
+   1. PROJECTION LAMBERT-93 (EPSG:2154) <-> WGS84
+   ========================================================================= */
+proj4.defs("EPSG:2154",
+  "+proj=lcc +lat_1=49 +lat_2=44 +lat_0=46.5 +lon_0=3 +x_0=700000 +y_0=6600000 " +
+  "+ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
+
+function l93ToWgs84(x, y) {
+  const r = proj4("EPSG:2154", "EPSG:4326", [x, y]);
+  return [r[1], r[0]]; // [lat, lng]
+}
+function wgs84ToL93(lat, lng) {
+  const r = proj4("EPSG:4326", "EPSG:2154", [lng, lat]);
+  return [r[0], r[1]]; // [x, y]
+}
+
+/* =========================================================================
+   2. PARSEUR CSV (gère les guillemets, virgule décimale française,
+      et l'en-tête shapefile "nom,Type,longueur,decimales")
+   ========================================================================= */
+function parseCsvLine(line) {
+  const out = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else { inQuotes = false; }
+      } else { cur += c; }
+    } else {
+      if (c === '"') { inQuotes = true; }
+      else if (c === ',') { out.push(cur); cur = ""; }
+      else { cur += c; }
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+function parseCsvText(text) {
+  const rawLines = text.split(/\r\n|\n|\r/);
+  const lines = [];
+  let buf = null;
+  for (const rl of rawLines) {
+    if (buf === null) buf = rl;
+    else buf += "\n" + rl;
+    const quoteCount = (buf.match(/"/g) || []).length;
+    if (quoteCount % 2 === 0) { lines.push(buf); buf = null; }
+  }
+  if (buf !== null && buf.trim() !== "") lines.push(buf);
+
+  if (lines.length === 0) throw new Error("Fichier CSV vide.");
+
+  const headerCells = parseCsvLine(lines[0]);
+  const cols = headerCells.map(h => {
+    const parts = h.split(",");
+    return { name: (parts[0] || "").trim(), type: (parts[1] || "C").trim().toUpperCase() };
+  });
+
+  const rows = [];
+  let errCount = 0;
+  for (let i = 1; i < lines.length; i++) {
+    const raw = lines[i];
+    if (raw.trim() === "") continue;
+    try {
+      const cells = parseCsvLine(raw);
+      const obj = {};
+      for (let c = 0; c < cols.length; c++) {
+        const col = cols[c];
+        let val = cells[c] !== undefined ? cells[c] : "";
+        if (col.type === "N") {
+          if (val === "" || val === null) { obj[col.name] = 0; }
+          else {
+            const num = parseFloat(String(val).replace(",", "."));
+            obj[col.name] = isNaN(num) ? 0 : num;
+          }
+        } else {
+          obj[col.name] = String(val).trim();
+        }
+      }
+      rows.push(obj);
+    } catch (e) {
+      errCount++;
+    }
+  }
+  return { cols, rows, errCount };
+}
+
+/* =========================================================================
+   3. CODES FOURCHE (identiques au plugin QGIS)
+   ========================================================================= */
+const CODES_FOURCHE = new Set(['DF', 'FF', 'FD', 'DD', 'DR', 'FR', 'CS', 'SA']);
+const CODES_FR = {
+  'DF': 'début de fourche (I → chaussées séparées)',
+  'FF': 'fin de fourche (chaussées séparées → I)',
+  'FD': 'fin de diffluence',
+  'DR': 'début de route séparée',
+  'FR': 'fin de route séparée',
+  'CS': 'convergence simple',
+  'SA': 'section autonome'
+};
+
+/* =========================================================================
+   4. PRCalculator — logique métier portée du plugin PyQGIS
+   ========================================================================= */
+class PRCalculator {
+  constructor(rows) {
+    this.segs = rows.map((r, id) => ({
+      id,
+      route: String(r.route || "").trim(),
+      longueur: Number(r.longueur) || 0,
+      prD: String(r.prD !== undefined ? r.prD : "").trim(),
+      depPrD: String(r.depPrD || "").trim(),
+      absD: Number(r.absD) || 0,
+      cumulD: Number(r.cumulD) || 0,
+      xD: Number(r.xD), yD: Number(r.yD), zD: Number(r.zD) || 0,
+      prF: String(r.prF !== undefined ? r.prF : "").trim(),
+      depPrF: String(r.depPrF || "").trim(),
+      absF: Number(r.absF) || 0,
+      cumulF: Number(r.cumulF) || 0,
+      xF: Number(r.xF), yF: Number(r.yF), zF: Number(r.zF) || 0,
+      cote: String(r.cote || "?").trim(),
+      nomPloDeb: String(r.nomPloDeb || "").trim(),
+      nomPloFin: String(r.nomPloFin || "").trim(),
+      logiquePlo: String(r.logiquePlo || "SC").trim(),
+      logiqueP_1: String(r.logiqueP_1 || "SC").trim()
+    }));
+    this._buildIndex();
+  }
+
+  _buildIndex() {
+    this.featIdsByRoute = {};
+    this.dSegByKey = {};
+    this.segByNomPloFin = {};
+    this.segByNomPloDeb = {};
+    this.depsIndex = new Set();
+    this.routesByDep = {};
+    this.prsByDepRoute = {};
+
+    for (const f of this.segs) {
+      if (!this.featIdsByRoute[f.route]) this.featIdsByRoute[f.route] = [];
+      this.featIdsByRoute[f.route].push(f.id);
+
+      if (f.cote === 'D') {
+        this.dSegByKey[f.route + "|" + f.prD + "|" + f.prF] = f.id;
+      }
+
+      const kFin = f.route + "|" + f.nomPloFin;
+      if (!this.segByNomPloFin[kFin]) this.segByNomPloFin[kFin] = [];
+      this.segByNomPloFin[kFin].push(f.id);
+
+      const kDeb = f.route + "|" + f.nomPloDeb;
+      if (!this.segByNomPloDeb[kDeb]) this.segByNomPloDeb[kDeb] = [];
+      this.segByNomPloDeb[kDeb].push(f.id);
+
+      const prdI = parseInt(f.prD);
+      if (f.depPrD) {
+        this.depsIndex.add(f.depPrD);
+        if (!this.routesByDep[f.depPrD]) this.routesByDep[f.depPrD] = new Set();
+        this.routesByDep[f.depPrD].add(f.route);
+        if (!isNaN(prdI)) {
+          const k = f.depPrD + "|" + f.route;
+          if (!this.prsByDepRoute[k]) this.prsByDepRoute[k] = new Set();
+          this.prsByDepRoute[k].add(prdI);
+        }
+      }
+      const prfI = parseInt(f.prF);
+      if (f.depPrF) {
+        this.depsIndex.add(f.depPrF);
+        if (!this.routesByDep[f.depPrF]) this.routesByDep[f.depPrF] = new Set();
+        this.routesByDep[f.depPrF].add(f.route);
+        if (!isNaN(prfI)) {
+          const k = f.depPrF + "|" + f.route;
+          if (!this.prsByDepRoute[k]) this.prsByDepRoute[k] = new Set();
+          this.prsByDepRoute[k].add(prfI);
+        }
+      }
+    }
+  }
+
+  getDepartements() { return Array.from(this.depsIndex).sort(); }
+  getRoutesForDep(dep) {
+    const s = this.routesByDep[dep];
+    return s ? Array.from(s).sort() : [];
+  }
+  getPrsForDepRoute(dep, route) {
+    const s = this.prsByDepRoute[dep + "|" + route];
+    return s ? Array.from(s).sort((a, b) => a - b) : [];
+  }
+  getRoutes() { return Object.keys(this.featIdsByRoute).sort(); }
+  getPrCount() {
+    let n = 0;
+    for (const k in this.featIdsByRoute) n += this.featIdsByRoute[k].length;
+    return n;
+  }
+
+  _findHomologueD(feat) {
+    const key = feat.route + "|" + feat.prD + "|" + feat.prF;
+    const id = this.dSegByKey[key];
+    return id !== undefined ? this.segs[id] : null;
+  }
+
+  _cumulAmont(feat, route, maxDepth = 10) {
+    let total = 0;
+    let depth = 0;
+    let currentNomDeb = feat.nomPloDeb;
+    const coteDepart = feat.cote;
+    const prdRef = feat.prD;
+
+    while (depth < maxDepth) {
+      const cands = this.segByNomPloFin[route + "|" + currentNomDeb] || [];
+      if (cands.length === 0) break;
+      let prevFeat = null;
+      if (cands.length === 1) {
+        prevFeat = this.segs[cands[0]];
+      } else {
+        for (const id of cands) {
+          const f = this.segs[id];
+          if (f.cote === coteDepart) { prevFeat = f; break; }
+        }
+        if (!prevFeat) prevFeat = this.segs[cands[0]];
+      }
+      if (!prevFeat) break;
+      if (prevFeat.prD !== prdRef) break;
+      total += prevFeat.longueur;
+      currentNomDeb = prevFeat.nomPloDeb;
+      depth++;
+    }
+    return total;
+  }
+
+  static _distToSeg(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const len2 = dx * dx + dy * dy;
+    if (len2 < 1e-9) {
+      const d = Math.hypot(px - x1, py - y1);
+      return { dist: d, ratio: 0, x: x1, y: y1 };
+    }
+    let t = ((px - x1) * dx + (py - y1) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const sx = x1 + t * dx, sy = y1 + t * dy;
+    return { dist: Math.hypot(px - sx, py - sy), ratio: t, x: sx, y: sy };
+  }
+
+  snapAndCompute(latlng, forceCote) {
+    const [px, py] = wgs84ToL93(latlng.lat, latlng.lng);
+    let best = null, bestDist = Infinity;
+    let coteIndisponible = false;
+
+    for (const f of this.segs) {
+      if (forceCote && f.cote !== forceCote) continue;
+      const r = PRCalculator._distToSeg(px, py, f.xD, f.yD, f.xF, f.yF);
+      if (r.dist < bestDist) { bestDist = r.dist; best = { f, r }; }
+    }
+    if (!best && forceCote) {
+      coteIndisponible = true;
+      for (const f of this.segs) {
+        const r = PRCalculator._distToSeg(px, py, f.xD, f.yD, f.xF, f.yF);
+        if (r.dist < bestDist) { bestDist = r.dist; best = { f, r }; }
+      }
+    }
+    if (!best) return null;
+
+    const f = best.f, r = best.r;
+    const snapX = r.x, snapY = r.y;
+    const [snapLat, snapLng] = l93ToWgs84(snapX, snapY);
+
+    const prd = parseInt(f.prD) || 0;
+    const longueur = f.longueur;
+    const cote = f.cote;
+    const logDeb = f.logiquePlo, logFin = f.logiqueP_1;
+    const depPr = f.depPrD;
+    const enFourche = CODES_FOURCHE.has(logDeb) || CODES_FOURCHE.has(logFin);
+
+    const abscisseLocale = r.ratio * longueur;
+    const cumulAmont = this._cumulAmont(f, f.route);
+    const abscisse = Math.round((cumulAmont + abscisseLocale) * 10) / 10;
+
+    let anomalieLongueur = false;
+    let longueurRef = longueur;
+    if (enFourche && (cote === 'G' || cote === 'I')) {
+      const segD = this._findHomologueD(f);
+      if (segD) longueurRef = segD.longueur;
+      else anomalieLongueur = true;
+    }
+
+    return {
+      x_l93: snapX, y_l93: snapY, lat: snapLat, lng: snapLng,
+      route: f.route, cote, pr: prd, abscisse, depPr,
+      longueurSegment: longueurRef, enFourche, logDeb, logFin,
+      anomalieLongueur, coteIndisponible, feat: f
+    };
+  }
+
+  _listDepPr(route, prTarget) {
+    const deps = new Set();
+    for (const id of (this.featIdsByRoute[route] || [])) {
+      const f = this.segs[id];
+      if (f.prD === prTarget) deps.add(f.depPrD);
+    }
+    return Array.from(deps).sort();
+  }
+
+  _findRootSegment(route, prTarget, cote, depPr) {
+    const cands = [];
+    for (const id of (this.featIdsByRoute[route] || [])) {
+      const f = this.segs[id];
+      if (f.prD !== prTarget || f.cote !== cote) continue;
+      if (depPr && f.depPrD !== depPr) continue;
+      cands.push(f);
+    }
+    if (cands.length === 0) return null;
+    if (cands.length === 1) return cands[0];
+    for (const f of cands) {
+      const prevs = this.segByNomPloFin[route + "|" + f.nomPloDeb] || [];
+      let hasPrevSame = false;
+      for (const pid of prevs) {
+        const pf = this.segs[pid];
+        if (pf.prD === prTarget && (!depPr || pf.depPrD === depPr)) { hasPrevSame = true; break; }
+      }
+      if (!hasPrevSame) return f;
+    }
+    return cands[0];
+  }
+
+  _buildChainForward(rootFeat, route, prTarget, depPr, maxDepth = 200) {
+    const chain = [rootFeat];
+    let current = rootFeat;
+    let depth = 0;
+    const coteDepart = rootFeat.cote;
+    while (depth < maxDepth) {
+      const nomFin = current.nomPloFin;
+      const cands = [];
+      for (const id of (this.featIdsByRoute[route] || [])) {
+        const f = this.segs[id];
+        if (f.nomPloDeb !== nomFin || f.prD !== prTarget) continue;
+        if (depPr && f.depPrD !== depPr) continue;
+        cands.push(f);
+      }
+      if (cands.length === 0) break;
+      let next = null;
+      if (cands.length === 1) next = cands[0];
+      else {
+        for (const f of cands) { if (f.cote === coteDepart) { next = f; break; } }
+        if (!next) next = cands[0];
+      }
+      chain.push(next);
+      current = next;
+      depth++;
+    }
+    return chain;
+  }
+
+  computePositionFromPr(route, pr, abscisse, cote, depPrOpt) {
+    route = String(route).trim();
+    cote = String(cote).trim();
+    const prTarget = String(parseInt(pr));
+    const abscisseTarget = parseFloat(abscisse);
+    if (isNaN(abscisseTarget)) return null;
+    if (!this.featIdsByRoute[route]) return null;
+
+    const depPr = depPrOpt ? String(depPrOpt).trim() : null;
+    const possibleDeps = this._listDepPr(route, prTarget);
+    if (!depPr && possibleDeps.length > 1) {
+      return { ambiguousDep: possibleDeps, pr: null, route, abscisse: null };
+    }
+
+    let rootFeat = this._findRootSegment(route, prTarget, cote, depPr);
+    if (!rootFeat) rootFeat = this._findRootSegment(route, prTarget, 'I', depPr);
+    if (!rootFeat) return null;
+
+    const chain = this._buildChainForward(rootFeat, route, prTarget, depPr, 200);
+    let cumul = this._cumulAmont(rootFeat, route);
+    let targetFeat = chain[chain.length - 1] || rootFeat;
+    let ratioInSeg = 1.0;
+
+    for (let i = 0; i < chain.length; i++) {
+      const feat = chain[i];
+      const segLen = feat.longueur || 0;
+      if (abscisseTarget <= cumul + segLen || i === chain.length - 1) {
+        const reste = abscisseTarget - cumul;
+        ratioInSeg = segLen <= 0 ? 0 : Math.min(Math.max(reste / segLen, 0), 1);
+        targetFeat = feat;
+        break;
+      }
+      cumul += segLen;
+    }
+
+    const px = targetFeat.xD + ratioInSeg * (targetFeat.xF - targetFeat.xD);
+    const py = targetFeat.yD + ratioInSeg * (targetFeat.yF - targetFeat.yD);
+    const [lat, lng] = l93ToWgs84(px, py);
+
+    const featCote = targetFeat.cote || cote;
+    const result = this.snapAndCompute({ lat, lng }, featCote);
+    if (result) result.ambiguousDep = null;
+    return result;
+  }
+}
+
+/* =========================================================================
+   5. TravauxCalculator — construction de géométrie inter-PR
+   ========================================================================= */
+class TravauxCalculator {
+  constructor(prCalc) { this.pc = prCalc; }
+
+  _locate(route, pr, abscisse, cote, depPr) {
+    const pc = this.pc;
+    route = String(route).trim();
+    const prTarget = String(parseInt(pr));
+    cote = String(cote).trim();
+
+    let rootFeat = pc._findRootSegment(route, prTarget, cote, depPr);
+    if (!rootFeat && cote !== 'I') rootFeat = pc._findRootSegment(route, prTarget, 'I', depPr);
+    if (!rootFeat) return null;
+
+    const cumulRacine = pc._cumulAmont(rootFeat, route);
+    const chain = pc._buildChainForward(rootFeat, route, prTarget, depPr, 200);
+
+    let cumul = cumulRacine;
+    let targetFeat = chain[chain.length - 1] || rootFeat;
+    let ratioInSeg = 1.0;
+    let chainExhausted = false;
+
+    for (let i = 0; i < chain.length; i++) {
+      const feat = chain[i];
+      const segLen = feat.longueur || 0;
+      if (abscisse <= cumul + segLen || i === chain.length - 1) {
+        const reste = abscisse - cumul;
+        ratioInSeg = segLen <= 0 ? 0 : Math.min(Math.max(reste / segLen, 0), 1);
+        targetFeat = feat;
+        const deficit = abscisse - (cumul + segLen);
+        chainExhausted = (i === chain.length - 1 && deficit > 1.0);
+        break;
+      }
+      cumul += segLen;
+    }
+    const featCote = targetFeat.cote || cote;
+    return { feat: targetFeat, ratio: ratioInSeg, cote: featCote, chainExhausted };
+  }
+
+  _firstSegment(route, cote) {
+    const pc = this.pc;
+    let best = null, bestCumul = null, fallback = null, fallbackCumul = null;
+    for (const id of (pc.featIdsByRoute[route] || [])) {
+      const f = pc.segs[id];
+      if (f.cote === cote) { if (bestCumul === null || f.cumulD < bestCumul) { best = f; bestCumul = f.cumulD; } }
+      else if (f.cote === 'I') { if (fallbackCumul === null || f.cumulD < fallbackCumul) { fallback = f; fallbackCumul = f.cumulD; } }
+    }
+    return best || fallback;
+  }
+  _lastSegment(route, cote) {
+    const pc = this.pc;
+    let best = null, bestCumul = null, fallback = null, fallbackCumul = null;
+    for (const id of (pc.featIdsByRoute[route] || [])) {
+      const f = pc.segs[id];
+      if (f.cote === cote) { if (bestCumul === null || f.cumulF > bestCumul) { best = f; bestCumul = f.cumulF; } }
+      else if (f.cote === 'I') { if (fallbackCumul === null || f.cumulF > fallbackCumul) { fallback = f; fallbackCumul = f.cumulF; } }
+    }
+    return best || fallback;
+  }
+  _locateRouteStart(route, cote) {
+    const f = this._firstSegment(route, cote);
+    return f ? { feat: f, ratio: 0.0, cote } : null;
+  }
+  _locateRouteEnd(route, cote) {
+    const f = this._lastSegment(route, cote);
+    return f ? { feat: f, ratio: 1.0, cote } : null;
+  }
+
+  _chainFrom(startFeat, route, endFeat, maxDepth = 2000) {
+    const pc = this.pc;
+    const endId = endFeat.id;
+    if (startFeat.id === endId) return [startFeat];
+
+    const candByNomDeb = {};
+    for (const id of (pc.featIdsByRoute[route] || [])) {
+      const f = pc.segs[id];
+      if (!candByNomDeb[f.nomPloDeb]) candByNomDeb[f.nomPloDeb] = [];
+      candByNomDeb[f.nomPloDeb].push(f);
+    }
+
+    function dfs(current, chainSoFar, depth) {
+      if (depth > maxDepth) return null;
+      const cands = candByNomDeb[current.nomPloFin] || [];
+      if (cands.length === 0) return null;
+      for (const f of cands) if (f.id === endId) return chainSoFar.concat([f]);
+      for (const f of cands) {
+        if (chainSoFar.some(x => x.id === f.id)) continue;
+        const res = dfs(f, chainSoFar.concat([f]), depth + 1);
+        if (res) return res;
+      }
+      return null;
+    }
+    return dfs(startFeat, [startFeat], 1);
+  }
+
+  _sampleSubline(x1, y1, z1, x2, y2, z2, rStart, rEnd) {
+    let swap = rStart > rEnd;
+    if (swap) { const t = rStart; rStart = rEnd; rEnd = t; }
+    const pStart = { x: x1 + rStart * (x2 - x1), y: y1 + rStart * (y2 - y1), z: z1 + rStart * (z2 - z1) };
+    const pEnd = { x: x1 + rEnd * (x2 - x1), y: y1 + rEnd * (y2 - y1), z: z1 + rEnd * (z2 - z1) };
+    const res = [pStart, pEnd];
+    if (swap) res.reverse();
+    return res;
+  }
+
+  _buildTroncon(route, locDebut, locFin) {
+    if (!locDebut || !locFin) return null;
+    const cumulDebut = locDebut.feat.cumulD + locDebut.ratio * (locDebut.feat.cumulF - locDebut.feat.cumulD);
+    const cumulFin = locFin.feat.cumulD + locFin.ratio * (locFin.feat.cumulF - locFin.feat.cumulD);
+    const inverse = cumulFin < cumulDebut;
+    const startLoc = inverse ? locFin : locDebut;
+    const endLoc = inverse ? locDebut : locFin;
+
+    const chain = this._chainFrom(startLoc.feat, route, endLoc.feat, 2000);
+    if (!chain) return null;
+
+    let points = [];
+    const n = chain.length;
+    for (let i = 0; i < n; i++) {
+      const feat = chain[i];
+      let rStart = 0.0, rEnd = 1.0;
+      if (i === 0) rStart = startLoc.ratio;
+      if (i === n - 1) rEnd = endLoc.ratio;
+      if (rEnd <= rStart) continue;
+      const sub = this._sampleSubline(feat.xD, feat.yD, feat.zD, feat.xF, feat.yF, feat.zF, rStart, rEnd);
+      if (points.length === 0) points = points.concat(sub);
+      else points = points.concat(sub.slice(1));
+    }
+    if (points.length < 2) return null;
+    if (inverse) points.reverse();
+    return points;
+  }
+
+  buildGeometry(routeDebut, prDebut, absDebut, coteDebut, routeFin, prFin, absFin, coteFin, depDebut, depFin) {
+    const locDebut = this._locate(routeDebut, prDebut, absDebut, coteDebut, depDebut);
+    if (!locDebut) return { error: `Position de début introuvable : route=${routeDebut}, PR=${prDebut}, côté=${coteDebut}.` };
+    if (locDebut.chainExhausted) return { error: `Chaîne de segments insuffisante pour atteindre PR${prDebut}+${absDebut}m côté ${coteDebut} sur ${routeDebut}.` };
+
+    const locFin = this._locate(routeFin, prFin, absFin, coteFin, depFin);
+    if (!locFin) return { error: `Position de fin introuvable : route=${routeFin}, PR=${prFin}, côté=${coteFin}.` };
+    if (locFin.chainExhausted) return { error: `Chaîne de segments insuffisante pour atteindre PR${prFin}+${absFin}m côté ${coteFin} sur ${routeFin}.` };
+
+    const sameRoute = String(routeDebut).trim() === String(routeFin).trim();
+
+    if (sameRoute) {
+      const trace = this._buildTroncon(routeDebut, locDebut, locFin);
+      if (!trace) return { error: "Impossible de relier les deux positions sur la même route (aucun chemin trouvé)." };
+      return { points: trace, warning: null };
+    }
+
+    const finCompleteDebut = this._locateRouteEnd(routeDebut, locDebut.cote);
+    if (!finCompleteDebut) return { error: `Impossible de trouver la fin de la route '${routeDebut}'.` };
+    const troncon1 = this._buildTroncon(routeDebut, locDebut, finCompleteDebut);
+
+    const debutCompletFin = this._locateRouteStart(routeFin, locFin.cote);
+    if (!debutCompletFin) return { error: `Impossible de trouver le début de la route '${routeFin}'.` };
+    const troncon2 = this._buildTroncon(routeFin, debutCompletFin, locFin);
+
+    const parts = [troncon1, troncon2].filter(t => t && t.length >= 2);
+    if (parts.length === 0) return { error: "Impossible de construire un tracé : aucun segment trouvé sur l'une ou l'autre route." };
+
+    return {
+      parts,
+      warning: `⚠ Routes différentes (${routeDebut} → ${routeFin}) : géométrie créée en ${parts.length} tronçon(s) indépendant(s), sans jonction géométrique.`
+    };
+  }
+}
+
+/* =========================================================================
+   6. ÉTAT GLOBAL DE L'APPLICATION
+   ========================================================================= */
+const App = {
+  map: null,
+  prCalc: null,
+  travauxCalc: null,
+  bornageRows: [],
+  markerLibre: null,
+  markerSnap: null,
+  rubberLine: null,
+  curseurActive: false,
+  forceCote: null,
+  lastResult: null,
+  lastLatLng: null,
+  modeClicTravaux: false,
+  travauxClicDebut: null,
+  travauxMarkerDebut: null,
+  travauxFeatures: [],
+  accrochageRows: [],
+  accrochageXField: null,
+  accrochageYField: null,
+  modeAccrochage: false,
+  accrochageUpdates: [],
+  gotoMarker: null,
+  travauxLayerGroup: null
+};
+
+/* =========================================================================
+   7. INITIALISATION CARTE
+   ========================================================================= */
+function initMap() {
+  App.map = L.map('map', { zoomControl: false, tap: true }).setView([46.6, 2.4], 6);
+  L.control.zoom({ position: 'bottomleft' }).addTo(App.map);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors',
+    errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBTAA7'
+  }).addTo(App.map);
+
+  App.travauxLayerGroup = L.layerGroup().addTo(App.map);
+
+  App.markerLibre = L.circleMarker([0, 0], {
+    radius: 9, color: '#dc3232', weight: 3, fillColor: '#dc3232', fillOpacity: 0.7
+  });
+  App.markerSnap = L.circleMarker([0, 0], {
+    radius: 7, color: '#1e64c8', weight: 3, fillColor: '#1e64c8', fillOpacity: 0.7
+  });
+  App.rubberLine = L.polyline([], { color: '#1e64c8', weight: 2, dashArray: '6,6', opacity: 0.7 });
+
+  let dragging = false;
+  App.map.on('mousedown touchstart', (e) => { if (App.curseurActive) dragging = true; });
+  App.map.on('mouseup touchend', () => { dragging = false; });
+
+  let throttleTimer = null;
+  App.map.on('mousemove', (e) => {
+    if (!App.curseurActive || !dragging) return;
+    if (throttleTimer) return;
+    throttleTimer = setTimeout(() => { throttleTimer = null; }, 60);
+    handleMapPointer(e.latlng);
+  });
+
+  App.map.on('click', (e) => {
+    if (!App.curseurActive) return;
+    handleMapPointer(e.latlng, true);
+  });
+}
+
+/* =========================================================================
+   8. GESTION DU POINTEUR SUR LA CARTE (curseur PR)
+   ========================================================================= */
+function handleMapPointer(latlng, isClick) {
+  if (!App.prCalc) return;
+  App.lastLatLng = latlng;
+  const result = App.prCalc.snapAndCompute(latlng, App.forceCote);
+  if (!result) {
+    setStatus("⚠ Aucun segment trouvé à proximité.", 'err');
+    return;
+  }
+  App.lastResult = result;
+
+  App.markerLibre.setLatLng(latlng);
+  if (!App.map.hasLayer(App.markerLibre)) App.markerLibre.addTo(App.map);
+  App.markerSnap.setLatLng([result.lat, result.lng]);
+  if (!App.map.hasLayer(App.markerSnap)) App.markerSnap.addTo(App.map);
+  App.rubberLine.setLatLngs([latlng, [result.lat, result.lng]]);
+  if (!App.map.hasLayer(App.rubberLine)) App.rubberLine.addTo(App.map);
+
+  updatePositionUI(result);
+
+  if (isClick && App.modeClicTravaux) {
+    handleTravauxClic(result);
+  }
+  if (isClick && App.modeAccrochage) {
+    handleAccrochageClic(result);
+  }
+}
+
+/* =========================================================================
+   9. MISE À JOUR DE L'INTERFACE — position courante
+   ========================================================================= */
+const COTE_LABELS = {
+  'D': ['Chaussée Droite', '#1565C0'],
+  'G': ['Chaussée Gauche', '#2e7d32'],
+  'I': ['Bidirectionnel', '#6a1b9a'],
+  '?': ['Côté inconnu', '#777']
+};
+
+function updatePositionUI(r) {
+  document.getElementById('valRoute').textContent = "Route " + (r.route || "?");
+  const [label, color] = COTE_LABELS[r.cote] || COTE_LABELS['?'];
+  const badge = document.getElementById('badgeCote');
+  badge.textContent = r.cote || '?';
+  badge.style.background = color;
+  document.getElementById('txtCote').textContent = label;
+  document.getElementById('txtCote').style.color = color;
+  document.getElementById('valPr').style.color = color;
+
+  if (r.pr !== null && r.abscisse !== null) {
+    document.getElementById('valPr').textContent = `PR ${r.pr} + ${Math.round(r.abscisse)} m`;
+  } else {
+    document.getElementById('valPr').textContent = 'PR ? + ? m';
+  }
+  document.getElementById('valLongueur').textContent = r.longueurSegment != null ?
+    `longueur segment : ${Math.round(r.longueurSegment)} m` : "";
+  document.getElementById('valX').textContent = r.x_l93.toFixed(2);
+  document.getElementById('valY').textContent = r.y_l93.toFixed(2);
+
+  const alertF = document.getElementById('alertFourche');
+  if (r.enFourche) {
+    const dDeb = CODES_FR[r.logDeb] || r.logDeb;
+    const dFin = CODES_FR[r.logFin] || r.logFin;
+    alertF.textContent = r.logDeb === r.logFin ?
+      `⚠ Zone de transition : ${dDeb}` :
+      `⚠ Segment de transition — Début : ${dDeb} / Fin : ${dFin}`;
+    alertF.classList.add('show');
+  } else {
+    alertF.classList.remove('show');
+  }
+
+  const alertA = document.getElementById('alertAnomalie');
+  if (r.anomalieLongueur) {
+    alertA.textContent = "⚠ Anomalie de données : aucun segment D homologue trouvé pour recaler cette zone de fourche. La longueur affichée peut être incorrecte.";
+    alertA.classList.add('show');
+  } else {
+    alertA.classList.remove('show');
+  }
+
+  if (r.coteIndisponible) {
+    setStatus("ℹ Côté forcé indisponible ici — détection automatique appliquée.", 'ok');
+  } else {
+    setStatus("Survolez ou touchez le réseau.", '');
+  }
+}
+
+function setStatus(msg, kind) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = kind ? kind : '';
+}
+
+/* =========================================================================
+   10. ACTIVATION / DÉSACTIVATION DU CURSEUR
+   ========================================================================= */
+document.getElementById('btnToggleCurseur').addEventListener('click', () => {
+  if (!App.prCalc) {
+    setStatus("⚠ Les données ne sont pas encore chargées.", 'err');
+    return;
+  }
+  App.curseurActive = !App.curseurActive;
+  const btn = document.getElementById('btnToggleCurseur');
+  const fabBtn = document.getElementById('btnCurseur');
+  if (App.curseurActive) {
+    btn.textContent = '⏹ Désactiver le curseur';
+    btn.classList.remove('btn'); btn.classList.add('btn', 'orange');
+    fabBtn.classList.add('active');
+    setStatus("Curseur actif. Touchez le réseau.", 'ok');
+  } else {
+    btn.textContent = '▶ Activer le curseur';
+    btn.classList.remove('orange');
+    fabBtn.classList.remove('active');
+    if (App.map.hasLayer(App.markerLibre)) App.map.removeLayer(App.markerLibre);
+    if (App.map.hasLayer(App.markerSnap)) App.map.removeLayer(App.markerSnap);
+    if (App.map.hasLayer(App.rubberLine)) App.map.removeLayer(App.rubberLine);
+    setStatus("Curseur désactivé.", '');
+  }
+});
+document.getElementById('btnCurseur').addEventListener('click', () => {
+  document.getElementById('btnToggleCurseur').click();
+});
+
+/* =========================================================================
+   11. FORCER LE CÔTÉ (D/G/I/Auto) — sans bouger le doigt
+   ========================================================================= */
+document.querySelectorAll('.segbtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.segbtn').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    const c = btn.getAttribute('data-cote');
+    App.forceCote = (c === 'null') ? null : c;
+    if (App.lastLatLng) handleMapPointer(App.lastLatLng, false);
+  });
+});
+
+/* =========================================================================
+   12. COPIER LES VALEURS
+   ========================================================================= */
+document.getElementById('btnCopy').addEventListener('click', () => {
+  if (!App.lastResult) return;
+  const r = App.lastResult;
+  const txt = `Route ${r.route} ${r.cote} PR ${r.pr} + ${Math.round(r.abscisse)} m  X=${r.x_l93.toFixed(2)} Y=${r.y_l93.toFixed(2)}`;
+  if (navigator.clipboard) navigator.clipboard.writeText(txt).catch(() => {});
+  setStatus("✔ Copié dans le presse-papiers.", 'ok');
+});
+
+/* =========================================================================
+   13. LISTES EN CASCADE (Département -> Route -> PR) — génériques
+   ========================================================================= */
+function fillDepSelect(selectEl) {
+  selectEl.innerHTML = '<option>—</option>';
+  if (!App.prCalc) return;
+  for (const dep of App.prCalc.getDepartements()) {
+    const o = document.createElement('option'); o.value = dep; o.textContent = dep;
+    selectEl.appendChild(o);
+  }
+}
+function bindCascade(depSel, routeSel, prSel) {
+  depSel.addEventListener('change', () => {
+    routeSel.innerHTML = '<option>—</option>'; prSel.innerHTML = '<option>—</option>';
+    const dep = depSel.value;
+    if (App.prCalc && dep && dep !== '—') {
+      for (const route of App.prCalc.getRoutesForDep(dep)) {
+        const o = document.createElement('option'); o.value = route; o.textContent = route;
+        routeSel.appendChild(o);
+      }
+    }
+  });
+  routeSel.addEventListener('change', () => {
+    prSel.innerHTML = '<option>—</option>';
+    const dep = depSel.value, route = routeSel.value;
+    if (App.prCalc && dep && dep !== '—' && route && route !== '—') {
+      for (const pr of App.prCalc.getPrsForDepRoute(dep, route)) {
+        const o = document.createElement('option'); o.value = pr; o.textContent = pr;
+        prSel.appendChild(o);
+      }
+    }
+  });
+}
+bindCascade(document.getElementById('selGotoDep'), document.getElementById('selGotoRoute'), document.getElementById('selGotoPr'));
+bindCascade(document.getElementById('selDepD'), document.getElementById('selRouteD'), document.getElementById('selPrD'));
+bindCascade(document.getElementById('selDepF'), document.getElementById('selRouteF'), document.getElementById('selPrF'));
+
+function refreshAllDepSelects() {
+  fillDepSelect(document.getElementById('selGotoDep'));
+  fillDepSelect(document.getElementById('selDepD'));
+  fillDepSelect(document.getElementById('selDepF'));
+}
+
+/* =========================================================================
+   14. "ALLER À UNE POSITION"
+   ========================================================================= */
+document.getElementById('btnGoto').addEventListener('click', () => {
+  if (!App.prCalc) { setStatus("⚠ Données non chargées.", 'err'); return; }
+  const dep = document.getElementById('selGotoDep').value;
+  const route = document.getElementById('selGotoRoute').value;
+  const pr = document.getElementById('selGotoPr').value;
+  const abs = document.getElementById('txtGotoAbs').value;
+  const cote = document.getElementById('selGotoCote').value;
+
+  const errs = [];
+  if (!route || route === '—') errs.push("route vide");
+  if (!pr || pr === '—') errs.push("PR vide");
+  else if (isNaN(parseInt(pr))) errs.push("PR invalide");
+  if (abs === '' || abs === null) errs.push("abscisse vide");
+  else if (isNaN(parseFloat(String(abs).replace(',', '.')))) errs.push("abscisse invalide");
+  if (!cote) errs.push("côté vide");
+  if (errs.length) { setStatus("⚠ Données invalides : " + errs.join(", ") + ".", 'err'); return; }
+
+  const depArg = (dep && dep !== '—') ? dep : null;
+  const absF = parseFloat(String(abs).replace(',', '.'));
+
+  let result;
+  try {
+    result = App.prCalc.computePositionFromPr(route, pr, absF, cote, depArg);
+  } catch (e) {
+    setStatus("⚠ Erreur lors du calcul : " + e.message, 'err'); return;
+  }
+  if (!result) {
+    setStatus(`⚠ Position introuvable : route '${route}' inexistante ou aucun segment pour PR ${pr} côté ${cote}.`, 'err');
+    return;
+  }
+  if (result.ambiguousDep) {
+    setStatus(`⚠ PR ambigu : plusieurs départements possibles (${result.ambiguousDep.join(', ')}). Renseignez le département.`, 'err');
+    return;
+  }
+  if (result.pr === null) {
+    setStatus(`⚠ Position introuvable pour route=${route}, PR=${pr}, côté=${cote}.`, 'err');
+    return;
+  }
+
+  App.lastResult = result;
+  App.lastLatLng = { lat: result.lat, lng: result.lng };
+  App.map.setView([result.lat, result.lng], 17);
+
+  if (!App.curseurActive) { App.curseurActive = true; document.getElementById('btnToggleCurseur').textContent = '⏹ Désactiver le curseur'; document.getElementById('btnCurseur').classList.add('active'); }
+
+  App.markerLibre.setLatLng([result.lat, result.lng]);
+  if (!App.map.hasLayer(App.markerLibre)) App.markerLibre.addTo(App.map);
+  App.markerSnap.setLatLng([result.lat, result.lng]);
+  if (!App.map.hasLayer(App.markerSnap)) App.markerSnap.addTo(App.map);
+  App.rubberLine.setLatLngs([[result.lat, result.lng], [result.lat, result.lng]]);
+  if (!App.map.hasLayer(App.rubberLine)) App.rubberLine.addTo(App.map);
+
+  updatePositionUI(result);
+  setStatus(`✔ Curseur positionné : route ${result.route}, côté ${result.cote}, PR ${result.pr} + ${Math.round(result.abscisse)} m.`, 'ok');
+});
+
+/* =========================================================================
+   15. MODULE TRAVAUX — création via formulaire
+   ========================================================================= */
+function readTravauxForm(prefix) {
+  const dep = document.getElementById('selDep' + prefix).value;
+  const route = document.getElementById('selRoute' + prefix).value;
+  const pr = document.getElementById('selPr' + prefix).value;
+  const abs = document.getElementById('txtAbs' + prefix).value;
+  const cote = document.getElementById('selCote' + prefix).value;
+  return { dep, route, pr, abs, cote };
+}
+
+function createTravauxFromValues(rd, rf, dateDebut, dateFin) {
+  if (!App.prCalc) { setStatus("⚠ Données non chargées.", 'err'); return; }
+  const errs = [];
+  ['route', 'pr', 'abs', 'cote'].forEach(k => {
+    if (!rd[k] || rd[k] === '—') errs.push('Début: ' + k + ' vide');
+    if (!rf[k] || rf[k] === '—') errs.push('Fin: ' + k + ' vide');
+  });
+  if (errs.length) { setStatus("⚠ Données invalides : " + errs.join(', '), 'err'); return; }
+
+  const prD = parseInt(rd.pr), prF = parseInt(rf.pr);
+  const absD = parseFloat(String(rd.abs).replace(',', '.'));
+  const absF = parseFloat(String(rf.abs).replace(',', '.'));
+  if (isNaN(prD) || isNaN(prF) || isNaN(absD) || isNaN(absF)) {
+    setStatus("⚠ PR ou abscisse invalide.", 'err'); return;
+  }
+
+  const tcalc = new TravauxCalculator(App.prCalc);
+  const depD = (rd.dep && rd.dep !== '—') ? rd.dep : null;
+  const depF = (rf.dep && rf.dep !== '—') ? rf.dep : null;
+
+  let result;
+  try {
+    result = tcalc.buildGeometry(rd.route, prD, absD, rd.cote, rf.route, prF, absF, rf.cote, depD, depF);
+  } catch (e) {
+    setStatus("⚠ Erreur lors du calcul de la géométrie : " + e.message, 'err'); return;
+  }
+  if (result.error) { setStatus("⚠ " + result.error, 'err'); return; }
+
+  const latlngGroups = [];
+  const partsL93 = result.points ? [result.points] : result.parts;
+  for (const part of partsL93) {
+    const ll = part.map(p => { const [lat, lng] = l93ToWgs84(p.x, p.y); return [lat, lng]; });
+    latlngGroups.push(ll);
+  }
+
+  const feature = {
+    id: App.travauxFeatures.length + 1,
+    routeDebut: rd.route, prDebut: prD, absDebut: absD, coteDebut: rd.cote,
+    routeFin: rf.route, prFin: prF, absFin: absF, coteFin: rf.cote,
+    dateDebut, dateFin, latlngGroups, partsL93
+  };
+  App.travauxFeatures.push(feature);
+  drawTravauxFeature(feature);
+  refreshTravauxList();
+
+  setStatus(result.warning ? ("✔ Entité créée. " + result.warning) : "✔ Entité travaux créée avec succès.", 'ok');
+}
+
+function drawTravauxFeature(feature) {
+  for (const ll of feature.latlngGroups) {
+    const line = L.polyline(ll, { color: '#ef6c00', weight: 5, opacity: 0.85 });
+    line.bindPopup(`<b>Travaux #${feature.id}</b><br>${feature.routeDebut} ${feature.coteDebut} PR${feature.prDebut}+${Math.round(feature.absDebut)}m<br>→ ${feature.routeFin} ${feature.coteFin} PR${feature.prFin}+${Math.round(feature.absFin)}m<br>${feature.dateDebut||''} → ${feature.dateFin||''}`);
+    App.travauxLayerGroup.addLayer(line);
+  }
+}
+
+function refreshTravauxList() {
+  const el = document.getElementById('listeTravaux');
+  if (App.travauxFeatures.length === 0) { el.textContent = "Aucune entité créée."; return; }
+  el.innerHTML = App.travauxFeatures.map(f =>
+    `#${f.id} — ${f.routeDebut}${f.coteDebut} PR${f.prDebut}+${Math.round(f.absDebut)}m → ${f.routeFin}${f.coteFin} PR${f.prFin}+${Math.round(f.absFin)}m`
+  ).join('<br>');
+}
+
+document.getElementById('btnCreateTravaux').addEventListener('click', () => {
+  const rd = readTravauxForm('D');
+  const rf = readTravauxForm('F');
+  const dateDebut = document.getElementById('dateDebut').value;
+  const dateFin = document.getElementById('dateFin').value;
+  if (dateDebut && dateFin && dateFin < dateDebut) {
+    setStatus("⚠ La date de fin est antérieure à la date de début.", 'err'); return;
+  }
+  createTravauxFromValues(rd, rf, dateDebut, dateFin);
+});
+
+/* =========================================================================
+   16. MODULE TRAVAUX — création rapide par 2 clics sur la carte
+   ========================================================================= */
+document.getElementById('btnModeClic').addEventListener('click', function () {
+  if (!App.curseurActive) {
+    setStatus("⚠ Activez d'abord le curseur PR (onglet Curseur PR).", 'err');
+    return;
+  }
+  App.modeClicTravaux = !App.modeClicTravaux;
+  const lbl = document.getElementById('lblModeClic');
+  if (App.modeClicTravaux) {
+    this.textContent = '🖱 Mode ACTIF — Clic 1 = début';
+    this.classList.add('active');
+    lbl.style.display = 'block';
+    lbl.textContent = 'En attente du point de début…';
+    setStatus("Mode clic travaux actif : touchez la carte pour poser le début.", 'ok');
+  } else {
+    this.textContent = '🖱 Activer le mode création par clic';
+    this.classList.remove('active');
+    lbl.style.display = 'none';
+    resetTravauxClic();
+  }
+});
+
+function resetTravauxClic() {
+  if (App.travauxMarkerDebut) { App.map.removeLayer(App.travauxMarkerDebut); App.travauxMarkerDebut = null; }
+  App.travauxClicDebut = null;
+  const lbl = document.getElementById('lblModeClic');
+  lbl.textContent = 'En attente du point de début…';
+}
+
+function handleTravauxClic(result) {
+  if (!App.travauxClicDebut) {
+    App.travauxClicDebut = { ...result };
+    App.travauxMarkerDebut = L.circleMarker([result.lat, result.lng], {
+      radius: 9, color: '#2e7d32', weight: 3, fillColor: '#2e7d32', fillOpacity: 0.8
+    }).addTo(App.map);
+    const lbl = document.getElementById('lblModeClic');
+    lbl.textContent = `✅ Début : ${result.route} ${result.cote} PR${result.pr}+${Math.round(result.abscisse)}m → touchez le point de fin.`;
+  } else {
+    const rd = App.travauxClicDebut, rf = result;
+    const msg = `Confirmer la création ?\n\nDébut : ${rd.route} ${rd.cote} PR${rd.pr}+${Math.round(rd.abscisse)}m\nFin : ${rf.route} ${rf.cote} PR${rf.pr}+${Math.round(rf.abscisse)}m`;
+    if (window.confirm(msg)) {
+      createTravauxFromValues(
+        { dep: rd.depPr, route: rd.route, pr: String(rd.pr), abs: String(rd.abscisse), cote: rd.cote },
+        { dep: rf.depPr, route: rf.route, pr: String(rf.pr), abs: String(rf.abscisse), cote: rf.cote },
+        new Date().toISOString().slice(0, 10),
+        new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
+      );
+    } else {
+      setStatus("Création annulée.", '');
+    }
+    resetTravauxClic();
+  }
+}
+
+/* =========================================================================
+   17. EXPORT GEOJSON DES TRAVAUX CRÉÉS
+   ========================================================================= */
+document.getElementById('btnExportTravaux').addEventListener('click', () => {
+  if (App.travauxFeatures.length === 0) { setStatus("Aucune entité à exporter.", 'err'); return; }
+  const features = App.travauxFeatures.map(f => {
+    const geom = f.latlngGroups.length === 1
+      ? { type: "LineString", coordinates: f.latlngGroups[0].map(p => [p[1], p[0]]) }
+      : { type: "MultiLineString", coordinates: f.latlngGroups.map(g => g.map(p => [p[1], p[0]])) };
+    return {
+      type: "Feature", geometry: geom,
+      properties: {
+        route_debut: f.routeDebut, pr_debut: f.prDebut, abs_debut: Math.round(f.absDebut), cote_debut: f.coteDebut,
+        route_fin: f.routeFin, pr_fin: f.prFin, abs_fin: Math.round(f.absFin), cote_fin: f.coteFin,
+        date_debut: f.dateDebut, date_fin: f.dateFin
+      }
+    };
+  });
+  const geojson = { type: "FeatureCollection", features };
+  downloadText("travaux_en_cours.geojson", JSON.stringify(geojson, null, 2), "application/geo+json");
+  setStatus("✔ Export GeoJSON généré.", 'ok');
+});
+
+function downloadText(filename, text, mime) {
+  const blob = new Blob([text], { type: mime || "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
+}
+
+/* =========================================================================
+   18. MODULE ACCROCHAGE
+   ========================================================================= */
+document.getElementById('btnLoadAccrochage').addEventListener('click', () => {
+  document.getElementById('fileAccrochage').click();
+});
+document.getElementById('fileAccrochage').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const { cols, rows, errCount } = parseCsvText(reader.result);
+      App.accrochageRows = rows;
+      document.getElementById('lblAccrochage').textContent = `${file.name} (${rows.length} entités${errCount ? ", " + errCount + " erreurs" : ""})`;
+      const selX = document.getElementById('selAccX'), selY = document.getElementById('selAccY');
+      selX.innerHTML = ''; selY.innerHTML = '';
+      cols.forEach(c => {
+        const o1 = document.createElement('option'); o1.value = c.name; o1.textContent = c.name; selX.appendChild(o1);
+        const o2 = document.createElement('option'); o2.value = c.name; o2.textContent = c.name; selY.appendChild(o2);
+      });
+      const guessX = cols.find(c => /^x$|x_l93|xcoord/i.test(c.name));
+      const guessY = cols.find(c => /^y$|y_l93|ycoord/i.test(c.name));
+      if (guessX) selX.value = guessX.name;
+      if (guessY) selY.value = guessY.name;
+    } catch (err) {
+      document.getElementById('lblAccrochage').textContent = "⚠ Erreur de lecture : " + err.message;
+    }
+  };
+  reader.readAsText(file, "UTF-8");
+});
+
+document.getElementById('btnModeAccrochage').addEventListener('click', function () {
+  if (!App.curseurActive) { setStatus("⚠ Activez d'abord le curseur PR.", 'err'); return; }
+  if (App.accrochageRows.length === 0) { setStatus("⚠ Chargez d'abord une couche cible.", 'err'); return; }
+  App.modeAccrochage = !App.modeAccrochage;
+  App.accrochageXField = document.getElementById('selAccX').value;
+  App.accrochageYField = document.getElementById('selAccY').value;
+  if (App.modeAccrochage) {
+    this.textContent = '🧲 Mode ACTIF — touchez une entité';
+    this.classList.add('active');
+    setStatus("Mode accrochage actif.", 'ok');
+  } else {
+    this.textContent = '🧲 Activer le mode accrochage';
+    this.classList.remove('active');
+    setStatus("Mode accrochage désactivé.", '');
+  }
+});
+
+function handleAccrochageClic(result) {
+  const xF = App.accrochageXField, yF = App.accrochageYField;
+  if (!xF || !yF) { setStatus("⚠ Sélectionnez les champs X/Y de la couche cible.", 'err'); return; }
+  let best = null, bestDist = Infinity, bestIdx = -1;
+  App.accrochageRows.forEach((row, idx) => {
+    const rx = parseFloat(String(row[xF]).replace(',', '.'));
+    const ry = parseFloat(String(row[yF]).replace(',', '.'));
+    if (isNaN(rx) || isNaN(ry)) return;
+    const d = Math.hypot(rx - result.x_l93, ry - result.y_l93);
+    if (d < bestDist) { bestDist = d; best = row; bestIdx = idx; }
+  });
+  if (!best) { setStatus("⚠ Aucune entité trouvée dans la couche cible.", 'err'); return; }
+
+  best.route = result.route;
+  best.pr = String(result.pr);
+  best.abscisse = String(Math.round(result.abscisse));
+  best.cote = result.cote;
+  best.departement = result.depPr || "";
+  best[xF] = String(result.x_l93.toFixed(2));
+  best[yF] = String(result.y_l93.toFixed(2));
+
+  App.accrochageUpdates.push({ idx: bestIdx, route: result.route, pr: result.pr, abscisse: Math.round(result.abscisse), cote: result.cote });
+  refreshAccrochageList();
+  setStatus(`✔ Entité #${bestIdx} mise à jour : route=${result.route}, PR=${result.pr}+${Math.round(result.abscisse)}m, côté=${result.cote}.`, 'ok');
+}
+
+function refreshAccrochageList() {
+  const el = document.getElementById('listeAccrochage');
+  if (App.accrochageUpdates.length === 0) { el.textContent = "Aucune mise à jour."; return; }
+  el.innerHTML = App.accrochageUpdates.map(u => `#${u.idx} — ${u.route} ${u.cote} PR${u.pr}+${u.abscisse}m`).join('<br>');
+}
+
+document.getElementById('btnExportAccrochage').addEventListener('click', () => {
+  if (App.accrochageRows.length === 0) { setStatus("⚠ Aucune donnée chargée.", 'err'); return; }
+  const headers = Object.keys(App.accrochageRows[0]);
+  const lines = [headers.join(",")];
+  for (const row of App.accrochageRows) {
+    lines.push(headers.map(h => {
+      const v = row[h] !== undefined ? row[h] : "";
+      return /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v;
+    }).join(","));
+  }
+  downloadText("cible_accrochage_maj.csv", lines.join("\r\n"), "text/csv");
+  setStatus("✔ Export CSV généré.", 'ok');
+});
+
+/* =========================================================================
+   19. GÉOLOCALISATION GPS
+   ========================================================================= */
+document.getElementById('fab').addEventListener('click', () => {
+  if (!navigator.geolocation) {
+    setStatus("⚠ La géolocalisation n'est pas disponible sur cet appareil.", 'err');
+    return;
+  }
+  setStatus("Recherche du GPS…", '');
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const latlng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      App.map.setView([latlng.lat, latlng.lng], 17);
+      if (App.curseurActive && App.prCalc) handleMapPointer(latlng, true);
+      setStatus("✔ Position GPS trouvée (précision ~" + Math.round(pos.coords.accuracy) + " m).", 'ok');
+    },
+    (err) => {
+      let msg = "⚠ Impossible d'obtenir la position GPS.";
+      if (err.code === 1) msg = "⚠ Permission de localisation refusée. Autorisez la géolocalisation dans les réglages.";
+      else if (err.code === 2) msg = "⚠ Position indisponible (GPS désactivé ou signal absent).";
+      else if (err.code === 3) msg = "⚠ Délai dépassé lors de la recherche GPS.";
+      setStatus(msg, 'err');
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+  );
+});
+
+/* =========================================================================
+   20. UI GÉNÉRIQUE — panneau, onglets, chargement manuel de repli
+   ========================================================================= */
+document.getElementById('btnMenu').addEventListener('click', () => document.getElementById('panel').classList.add('open'));
+document.getElementById('panelClose').addEventListener('click', () => document.getElementById('panel').classList.remove('open'));
+
+document.querySelectorAll('.tabbtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tabbtn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tabpage').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.getAttribute('data-tab')).classList.add('active');
+  });
+});
+
+let filesLoaded = { interPr: false };
+document.getElementById('btnLoadInterPr').addEventListener('click', () => document.getElementById('fileInterPr').click());
+document.getElementById('btnLoadBornage').addEventListener('click', () => document.getElementById('fileBornage').click());
+
+document.getElementById('fileInterPr').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const { rows, errCount } = parseCsvText(reader.result);
+      if (rows.length === 0) throw new Error("aucune ligne valide");
+      App.prCalc = new PRCalculator(rows);
+      document.getElementById('lblInterPr').textContent =
+        `${file.name} — ${App.prCalc.getPrCount()} segments, ${App.prCalc.getRoutes().length} routes${errCount ? " (" + errCount + " lignes ignorées)" : ""}`;
+      filesLoaded.interPr = true;
+      checkGateReady();
+    } catch (err) {
+      document.getElementById('lblInterPr').textContent = "⚠ Erreur : " + err.message;
+      filesLoaded.interPr = false;
+      checkGateReady();
+    }
+  };
+  reader.onerror = () => { document.getElementById('lblInterPr').textContent = "⚠ Erreur de lecture du fichier."; };
+  reader.readAsText(file, "UTF-8");
+});
+
+document.getElementById('fileBornage').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const { rows, errCount } = parseCsvText(reader.result);
+      App.bornageRows = rows;
+      document.getElementById('lblBornage').textContent = `${file.name} — ${rows.length} points${errCount ? " (" + errCount + " lignes ignorées)" : ""}`;
+    } catch (err) {
+      document.getElementById('lblBornage').textContent = "⚠ Erreur : " + err.message;
+    }
+  };
+  reader.readAsText(file, "UTF-8");
+});
+
+function checkGateReady() {
+  document.getElementById('btnStart').disabled = !filesLoaded.interPr;
+}
+
+document.getElementById('btnStart').addEventListener('click', () => {
+  if (!App.prCalc) return;
+  finishStartup();
+});
+
+/* =========================================================================
+   21. CHARGEMENT AUTOMATIQUE DES CSV EMBARQUÉS (bundlés dans l'APK)
+   ========================================================================= */
+async function fetchCsvAsset(path) {
+  const res = await fetch(path, { cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status} sur ${path}`);
+  const text = await res.text();
+  if (!text || text.trim() === "") throw new Error(`fichier vide : ${path}`);
+  return text;
+}
+
+async function autoLoadBundledData() {
+  const msgEl = document.getElementById('autoLoadMsg');
+  try {
+    // Le fichier "Segments inter-PR" est obligatoire pour démarrer.
+    const interPrText = await fetchCsvAsset(BUNDLED_INTERPR_PATH);
+    const { rows, errCount } = parseCsvText(interPrText);
+    if (rows.length === 0) throw new Error("le CSV inter-PR embarqué ne contient aucune ligne valide.");
+    App.prCalc = new PRCalculator(rows);
+
+    // Le fichier "Bornage PR" est optionnel (affichage carte uniquement).
+    try {
+      const bornageText = await fetchCsvAsset(BUNDLED_BORNAGE_PATH);
+      const { rows: bRows } = parseCsvText(bornageText);
+      App.bornageRows = bRows;
+    } catch (eBornage) {
+      msgEl.textContent = "Bornage PR non disponible (facultatif) — poursuite du démarrage…";
+      App.bornageRows = [];
+    }
+
+    finishStartup(errCount);
+  } catch (e) {
+    // Repli : afficher le sélecteur de fichiers manuel.
+    document.getElementById('autoLoadView').style.display = 'none';
+    document.getElementById('manualFallback').classList.add('show');
+    document.getElementById('gateMsg').textContent =
+      "⚠ Chargement automatique impossible (" + e.message + "). Utilisez les fichiers manuels ci-dessus.";
+    setStatus("⚠ Données embarquées introuvables — chargement manuel requis.", 'err');
+  }
+}
+
+function finishStartup(errCount) {
+  document.getElementById('fileGate').classList.add('hidden');
+  refreshAllDepSelects();
+  if (App.bornageRows.length > 0) drawBornagePoints();
+
+  try {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const f of App.prCalc.segs) {
+      minX = Math.min(minX, f.xD, f.xF); maxX = Math.max(maxX, f.xD, f.xF);
+      minY = Math.min(minY, f.yD, f.yF); maxY = Math.max(maxY, f.yD, f.yF);
+    }
+    const [lat1, lng1] = l93ToWgs84(minX, minY);
+    const [lat2, lng2] = l93ToWgs84(maxX, maxY);
+    App.map.fitBounds([[lat1, lng1], [lat2, lng2]]);
+  } catch (e) { /* silencieux */ }
+
+  const suffix = errCount ? ` (${errCount} lignes ignorées lors du parsing)` : "";
+  setStatus("✔ Données chargées" + suffix + ". Activez le curseur pour commencer.", 'ok');
+}
+
+function drawBornagePoints() {
+  const layer = L.layerGroup();
+  for (const row of App.bornageRows) {
+    const x = Number(row.x), y = Number(row.y);
+    if (isNaN(x) || isNaN(y)) continue;
+    const [lat, lng] = l93ToWgs84(x, y);
+    const m = L.circleMarker([lat, lng], { radius: 4, color: '#555', weight: 1, fillColor: '#fff', fillOpacity: 0.9 });
+    m.bindPopup(`Route ${row.route} — PR ${row.pr} (${row.cote})`);
+    layer.addLayer(m);
+  }
+  layer.addTo(App.map);
+}
+
+/* =========================================================================
+   22. DÉMARRAGE
+   ========================================================================= */
+window.addEventListener('load', () => {
+  initMap();
+  autoLoadBundledData();
+});
+</script>
+</body>
+</html>

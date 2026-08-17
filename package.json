@@ -1,0 +1,17 @@
+{
+  "name": "curseur-pr-mobile",
+  "version": "1.0.0",
+  "description": "Curseur PR - application mobile Capacitor (SIG bornage/PR)",
+  "private": true,
+  "scripts": {
+    "sync": "cap sync android",
+    "open:android": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/core": "^6.1.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2"
+  }
+}
