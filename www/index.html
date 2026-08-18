@@ -144,6 +144,28 @@
   }
   #btnForceManual.show{display:block;}
   #diagBox{font-size:11px;opacity:.7;margin-top:10px;max-width:320px;word-break:break-all;}
+
+  /* ---- Bulle d'information au clic (position PR) ---- */
+  #prBubble{
+    position:absolute;z-index:800;display:none;
+    background:rgba(20,20,20,0.92);color:#fff;
+    border-radius:12px;padding:10px 14px;
+    font-size:13px;line-height:1.5;
+    box-shadow:0 4px 16px rgba(0,0,0,.4);
+    pointer-events:none;
+    max-width:min(260px,80vw);
+    transform:translate(-50%, calc(-100% - 16px));
+    white-space:nowrap;
+  }
+  #prBubble::after{
+    content:"";position:absolute;left:50%;bottom:-10px;transform:translateX(-50%);
+    border:6px solid transparent;border-top-color:rgba(20,20,20,0.92);
+  }
+  #prBubble .b-title{font-weight:800;font-size:15px;display:block;}
+  #prBubble .b-route{color:#90caf9;font-weight:700;}
+  #prBubble .b-sens{color:#a5d6a7;font-size:11.5px;}
+  #prBubble .b-cote{display:inline-block;padding:1px 8px;border-radius:10px;
+    font-weight:700;font-size:11px;margin-left:4px;}
 </style>
 </head>
 <body>
@@ -175,6 +197,7 @@
 </div>
 
 <div id="map"></div>
+<div id="prBubble"></div>
 
 <div id="topbar">
   <button class="iconbtn" id="btnMenu">☰</button>
@@ -345,11 +368,6 @@ function wgs84ToL93(lat, lng) {
 
 /* =========================================================================
    2. PARSEUR CSV — MACHINE À ÉTATS EN UN SEUL PASSAGE (O(n) garanti)
-      Gère : guillemets, champs multi-lignes entre guillemets,
-      décimale française ("912382,2"), et l'en-tête shapefile
-      "nom,Type,longueur,decimales". Aucune reconstruction de buffer
-      ligne par ligne (contrairement à une v1 en O(n²) qui pouvait
-      bloquer plusieurs minutes sur mobile en cas de guillemet isolé).
    ========================================================================= */
 function tokenizeCsv(text) {
   const rows = [];
@@ -362,16 +380,16 @@ function tokenizeCsv(text) {
   while (i < len) {
     const c = text.charCodeAt(i);
     if (inQuotes) {
-      if (c === 34 /* " */) {
+      if (c === 34) {
         if (text.charCodeAt(i + 1) === 34) { cell += '"'; i += 2; continue; }
         inQuotes = false; i++; continue;
       }
       cell += text[i]; i++; continue;
     } else {
       if (c === 34) { inQuotes = true; i++; continue; }
-      if (c === 44 /* , */) { row.push(cell); cell = ""; i++; continue; }
-      if (c === 13 /* \r */) { i++; continue; }
-      if (c === 10 /* \n */) { row.push(cell); cell = ""; rows.push(row); row = []; i++; continue; }
+      if (c === 44) { row.push(cell); cell = ""; i++; continue; }
+      if (c === 13) { i++; continue; }
+      if (c === 10) { row.push(cell); cell = ""; rows.push(row); row = []; i++; continue; }
       cell += text[i]; i++; continue;
     }
   }
@@ -923,7 +941,8 @@ const App = {
   modeAccrochage: false,
   accrochageUpdates: [],
   gotoMarker: null,
-  travauxLayerGroup: null
+  travauxLayerGroup: null,
+  bubbleTimer: null
 };
 
 /* =========================================================================
@@ -964,6 +983,8 @@ function initMap() {
     if (!App.curseurActive) return;
     handleMapPointer(e.latlng, true);
   });
+
+  App.map.on('movestart', hidePrBubble);
 }
 
 /* =========================================================================
@@ -988,12 +1009,63 @@ function handleMapPointer(latlng, isClick) {
 
   updatePositionUI(result);
 
+  if (isClick) {
+    showPrBubble(latlng, result);
+  }
   if (isClick && App.modeClicTravaux) {
     handleTravauxClic(result);
   }
   if (isClick && App.modeAccrochage) {
     handleAccrochageClic(result);
   }
+}
+
+/* =========================================================================
+   8b. BULLE D'INFORMATION AU CLIC (Route / Côté / PR + Abscisse / Sens)
+   ========================================================================= */
+const COTE_COLORS = { 'D': '#1565C0', 'G': '#2e7d32', 'I': '#6a1b9a', '?': '#777' };
+
+function computeSensLabel(feat) {
+  // Le sens de progression du segment va de (xD,yD) vers (xF,yF),
+  // c'est-à-dire du PR de début vers le PR de fin.
+  const prD = parseInt(feat.prD);
+  const prF = parseInt(feat.prF);
+  if (!isNaN(prD) && !isNaN(prF) && prD !== prF) {
+    return `Sens : PR ${prD} → PR ${prF}`;
+  }
+  return `Sens : ${feat.nomPloDeb} → ${feat.nomPloFin}`;
+}
+
+function showPrBubble(latlng, result) {
+  const el = document.getElementById('prBubble');
+  const pt = App.map.latLngToContainerPoint(latlng);
+
+  const cote = result.cote || '?';
+  const coteColor = COTE_COLORS[cote] || COTE_COLORS['?'];
+  const prTxt = (result.pr !== null && result.pr !== undefined)
+    ? `PR ${result.pr} + ${Math.round(result.abscisse)} m`
+    : 'PR ? + ? m';
+  const sensTxt = result.feat ? computeSensLabel(result.feat) : '';
+
+  el.innerHTML =
+    `<span class="b-title">${prTxt}</span>` +
+    `<span class="b-route">Route ${result.route || '?'}</span>` +
+    `<span class="b-cote" style="background:${coteColor};">Côté ${cote}</span>` +
+    (sensTxt ? `<br><span class="b-sens">${sensTxt}</span>` : '');
+
+  // Positionne la bulle au-dessus du point cliqué (flèche vers le bas).
+  el.style.left = pt.x + 'px';
+  el.style.top = pt.y + 'px';
+  el.style.display = 'block';
+
+  // Masquage automatique après 6 s pour ne pas gêner la navigation.
+  if (App.bubbleTimer) clearTimeout(App.bubbleTimer);
+  App.bubbleTimer = setTimeout(hidePrBubble, 6000);
+}
+
+function hidePrBubble() {
+  document.getElementById('prBubble').style.display = 'none';
+  if (App.bubbleTimer) { clearTimeout(App.bubbleTimer); App.bubbleTimer = null; }
 }
 
 /* =========================================================================
@@ -1082,6 +1154,7 @@ document.getElementById('btnToggleCurseur').addEventListener('click', () => {
     if (App.map.hasLayer(App.markerLibre)) App.map.removeLayer(App.markerLibre);
     if (App.map.hasLayer(App.markerSnap)) App.map.removeLayer(App.markerSnap);
     if (App.map.hasLayer(App.rubberLine)) App.map.removeLayer(App.rubberLine);
+    hidePrBubble();
     setStatus("Curseur désactivé.", '');
   }
 });
@@ -1212,6 +1285,7 @@ document.getElementById('btnGoto').addEventListener('click', () => {
   if (!App.map.hasLayer(App.rubberLine)) App.rubberLine.addTo(App.map);
 
   updatePositionUI(result);
+  showPrBubble({ lat: result.lat, lng: result.lng }, result);
   setStatus(`✔ Curseur positionné : route ${result.route}, côté ${result.cote}, PR ${result.pr} + ${Math.round(result.abscisse)} m.`, 'ok');
 });
 
@@ -1637,7 +1711,7 @@ function fetchWithTimeout(path, timeoutMs) {
       })
       .catch(err => {
         clearTimeout(timer);
-        if (err.name === 'AbortError') return; // déjà rejeté via le timer
+        if (err.name === 'AbortError') return;
         reject(err);
       });
   });
@@ -1650,7 +1724,6 @@ async function autoLoadBundledData() {
   const msgEl = document.getElementById('autoLoadMsg');
   const diagEl = document.getElementById('diagBox');
 
-  // Affiche le bouton de secours après 8s si le chargement n'a pas fini.
   setTimeout(() => {
     if (!startupFinished && !manualForced) {
       document.getElementById('btnForceManual').classList.add('show');
